@@ -1,0 +1,87 @@
+from torob_client import Torob
+import pandas as pd
+import os
+from datetime import datetime
+
+
+client = Torob()
+result = client.search("name product ", page=0)
+
+if not result or 'results' not in result:
+    print("خطا: نتیجه‌ای دریافت نشد")
+    exit()
+
+products = result.get('results', [])
+
+if not products:
+    print("محصولی یافت نشد")
+    exit()
+
+
+data = []
+for product in products:
+    # استخراج قیمت (حذف کاما و تبدیل به عدد)
+    price_text = product.get('price_text', '0')
+    try:
+        # حذف کاراکترهای غیرعددی (مثل کاما و تومان)
+        price_num = int(''.join(filter(str.isdigit, str(price_text))))
+    except:
+        price_num = None
+    
+    data.append({
+        'نام محصول': product.get('name1', 'بدون نام'),
+        'قیمت (تومان)': price_num,
+        'قیمت متنی': price_text,
+        'تعداد فروشنده': product.get('shop_text', 'نامشخص'),
+        'لینک محصول': f"https://torob.com{product.get('web_client_absolute_url', '')}",
+        'شناسه محصول': product.get('prk', 'ندارد')
+    })
+
+df = pd.DataFrame(data)
+
+
+df = df[df['قیمت (تومان)'] > 0]
+
+# مرتب‌سازی بر اساس قیمت (ارزان‌ترین اول)
+df = df.sort_values('قیمت (تومان)', ascending=True)
+
+
+df.insert(0, 'ردیف', range(1, len(df) + 1))
+
+
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+filename = os.path.join(desktop, f"torob_kood_shok_{timestamp}.xlsx")
+
+with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+    df.to_excel(writer, sheet_name='کود شوک', index=False)
+    
+    # تنظیم عرض ستون‌ها
+    ws = writer.sheets['کود شوک']
+    ws.column_dimensions['A'].width = 8   # ردیف
+    ws.column_dimensions['B'].width = 55  # نام محصول
+    ws.column_dimensions['C'].width = 18  # قیمت (تومان)
+    ws.column_dimensions['D'].width = 20  # قیمت متنی
+    ws.column_dimensions['E'].width = 20  # تعداد فروشنده
+    ws.column_dimensions['F'].width = 50  # لینک محصول
+    ws.column_dimensions['G'].width = 35  # شناسه محصول
+
+
+print("\n" + "=" * 70)
+print(f" 10 محصول ارزان‌ترین برای 'کود شوک':")
+print("=" * 70)
+
+for i, row in df.head(10).iterrows():
+    print(f"{i+1}. {row['نام محصول'][:55]}")
+    print(f"    {row['قیمت متنی']} -  {row['تعداد فروشنده']}")
+    print("-" * 55)
+
+
+min_price = df['قیمت (تومان)'].min()
+avg_price = df['قیمت (تومان)'].mean()
+print(f"\n آمار:")
+print(f"   تعداد کل محصولات: {len(df)}")
+print(f"   کمترین قیمت: {min_price:,} تومان")
+print(f"   میانگین قیمت: {int(avg_price):,} تومان")
+
+print(f"\n فایل Excel ذخیره شد: {filename}")
